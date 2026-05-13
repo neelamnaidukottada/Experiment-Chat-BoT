@@ -67,7 +67,7 @@ async def send_message(
         
         # Determine if request is JSON or FormData
         content_type = request.headers.get("content-type", "")
-        logger.info(f"[Chat] Content-Type: {content_type}")
+        logger.info(f"[Chat] Content-Type header value: '{content_type}'")
         
         if "application/json" in content_type:
             # Handle JSON request (text-only message)
@@ -80,17 +80,18 @@ async def send_message(
             form_data = await request.form()
             user_message = form_data.get("user_message", "")
             
-            # Get files if any
-            files_list = form_data.getlist("files")
-            logger.info(f"[Chat] Received FormData - files_list count: {len(files_list)}")
+            # Get files if any - check both uppercase and lowercase
+            files_list = form_data.getlist("files") or form_data.getlist("file") or []
+            logger.info(f"[Chat] ✅ Received FormData request - Detected {len(files_list)} files")
             if files_list:
                 files = [f for f in files_list if hasattr(f, 'filename')]
-                logger.info(f"[Chat] ✅ Received FormData with {len(files)} valid files")
+                logger.info(f"[Chat] ✅ Valid file objects: {len(files)}")
                 for f in files:
                     logger.info(f"[Chat]   - File: {f.filename} (type: {f.content_type})")
             else:
-                logger.info("[Chat] ✅ Received FormData - NO FILES")
+                logger.info("[Chat] ℹ️ FormData request but NO FILES detected")
         else:
+            logger.warning(f"[Chat] ⚠️ Unsupported content-type: {content_type}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid content type. Expected application/json or multipart/form-data",
@@ -102,43 +103,45 @@ async def send_message(
                 detail="user_message is required",
             )
         
+        logger.info(f"[Chat] CHECKING FILES: received {len(files)} files")
+        
         # Process message with files if any
         message_content = user_message
         
-        if files:
-            logger.info(f"[Chat] ⭐ Processing {len(files)} file(s) - WILL APPEND TO MESSAGE")
+        if files and len(files) > 0:
+            logger.info(f"[Chat] ⭐ ENTERING FILE PROCESSING BLOCK - {len(files)} file(s) detected")
             file_contents = []
             
             for file in files:
                 try:
                     file_content = await file.read()
-                    logger.info(f"[Chat] ✅ Read file: {file.filename} ({file.content_type}, {len(file_content)} bytes)")
+                    logger.info(f"[Chat] ✅ READ FILE: {file.filename} - {len(file_content)} bytes")
                     
                     # Extract text from file
-                    logger.info(f"[Chat] 🔄 Starting extraction for {file.filename}")
+                    logger.info(f"[Chat] 🔄 CALLING FileService.extract_text_from_file() for {file.filename}")
                     extracted_text = FileService.extract_text_from_file(
                         file_content,
                         file.filename,
                         file.content_type or "application/octet-stream"
                     )
-                    logger.info(f"[Chat] 📄 Extraction result for {file.filename}: {type(extracted_text)} - {len(str(extracted_text)) if extracted_text else 0} chars")
+                    logger.info(f"[Chat] EXTRACTED: {len(str(extracted_text)) if extracted_text else 0} chars from {file.filename}")
                     
                     # ALWAYS append file content to message (with or without extraction)
                     if extracted_text and len(str(extracted_text).strip()) > 0:
                         file_content_str = str(extracted_text)
-                        logger.info(f"[Chat] ✅ Successfully extracted {len(file_content_str)} chars from {file.filename}")
+                        logger.info(f"[Chat] ✅ Using extracted content: {len(file_content_str)} chars")
                     else:
                         # Even if extraction failed, include a placeholder
                         file_content_str = f"[File could not be read: {file.filename}]"
-                        logger.warning(f"[Chat] ⚠️ Extraction empty for {file.filename}, using placeholder")
+                        logger.warning(f"[Chat] ⚠️ Extraction empty for {file.filename}")
                     
                     # ALWAYS append with proper formatting
                     formatted_content = f"\n\n===== FILE START: {file.filename} =====\n{file_content_str}\n===== FILE END: {file.filename} ====="
                     file_contents.append(formatted_content)
-                    logger.info(f"[Chat] ✅ Appended file content block for {file.filename}")
+                    logger.info(f"[Chat] ✅ APPENDED file block: {len(formatted_content)} chars")
                     
                 except Exception as e:
-                    logger.error(f"[Chat] ❌ Error processing file {file.filename}: {str(e)}", exc_info=True)
+                    logger.error(f"[Chat] ❌ ERROR processing file {file.filename}: {str(e)}", exc_info=True)
                     # Still append error message
                     error_block = f"\n\n===== FILE ERROR: {file.filename} =====\nError reading file: {str(e)}\n===== FILE ERROR END ====="
                     file_contents.append(error_block)
@@ -147,19 +150,27 @@ async def send_message(
             # CRITICAL: Always append file contents if files were processed
             if file_contents:
                 message_content = user_message + "".join(file_contents)
-                logger.info(f"[Chat] ✅✅✅ MESSAGE UPDATED WITH FILES - Final length: {len(message_content)} chars")
-                logger.info(f"[Chat] ✅✅✅ Message will be sent to LLM WITH FILE CONTENT")
+                logger.info(f"[Chat] ✅✅✅ FINAL MESSAGE - Total length: {len(message_content)} chars")
+                logger.info(f"[Chat] ✅✅✅ Message preview (first 300 chars): {message_content[:300]}")
             else:
-                logger.error(f"[Chat] ❌❌❌ CRITICAL: Files were present but file_contents is empty!")
+                logger.error(f"[Chat] ❌❌❌ FILES WERE PROCESSED BUT file_contents is EMPTY!")
         else:
-            logger.info(f"[Chat] No files in this request - text only message")
+            logger.info(f"[Chat] No files - text only message")
         
-        logger.info(f"[Chat] 🚀 About to send to LLM. Total message length: {len(message_content)} chars")
-        logger.info(f"[Chat] 🚀 Message preview (first 300 chars): {message_content[:300]}")
-        if "[File" in message_content or "=====" in message_content:
-            logger.info(f"[Chat] ✅ Confirmed: File markers present in message!")
+        logger.info(f"[Chat] BEFORE LLM - Message length: {len(message_content)} chars")
+        
+        # Check for all types of markers
+        has_file_markers = "[File" in message_content or "=====" in message_content
+        has_image_marker = "[IMAGE ANALYSIS REQUEST]" in message_content
+        
+        if has_file_markers or has_image_marker:
+            logger.info(f"[Chat] ✅ Confirmed: Content markers present in message!")
+            if has_image_marker:
+                logger.info(f"[Chat] ✅ IMAGE MARKER DETECTED - Will trigger vision LLM")
+            if has_file_markers:
+                logger.info(f"[Chat] ✅ FILE MARKERS DETECTED - Will include file content")
         else:
-            logger.warning(f"[Chat] ⚠️ Warning: No file markers in message!")
+            logger.warning(f"[Chat] ⚠️ Warning: No content markers in message!")
         
         # Create conversation if not provided
         if not conversation_id:

@@ -12,9 +12,6 @@ class ApiClient {
   constructor() {
     this.client = axios.create({
       baseURL: API_BASE_URL,
-      headers: {
-        'Content-Type': 'application/json',
-      },
       withCredentials: true,
       timeout: 30000,
     });
@@ -166,14 +163,9 @@ class ApiClient {
       
       const params = conversationId ? { conversation_id: conversationId } : {};
       
-      // Don't set Content-Type header - let axios handle it automatically with FormData
-      // Just send the formData directly
+      // Send FormData directly - axios will auto-detect and set proper multipart/form-data boundary
       const response = await this.client.post<ChatMessage>('/api/chat/message', formData, {
         params,
-        headers: {
-          // Remove Content-Type to let axios/browser set it automatically with boundary
-          // This ensures multipart/form-data; boundary=... is set correctly
-        },
       });
       console.log('[API] Chat response with files received:', response.data);
       return response.data;

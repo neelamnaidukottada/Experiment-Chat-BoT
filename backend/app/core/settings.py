@@ -17,8 +17,8 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "gpt-4o"
     
     # Google Gemini
-    GOOGLE_GEMINI_API_KEY: str = "AIzaSyD6rbz7oKzMMoTAyhcvbgmhcenJo9K2dw4"  # Set via environment variable (Get from https://aistudio.google.com/app/apikey)
-    GEMINI_IMAGE_MODEL: str = "gemini-2.0-flash"  # Google Gemini 2.0 Flash model for images
+    GOOGLE_GEMINI_API_KEY: str = ""  # Set via environment variable (Get from https://aistudio.google.com/app/apikey)
+    GEMINI_IMAGE_MODEL: str = "models/imagen-3.0-generate-001"  # Gemini image generation model
     
     # Database - Supabase PostgreSQL
     DATABASE_URL: str = "postgresql://user:password@localhost:5432/chatbot_db"

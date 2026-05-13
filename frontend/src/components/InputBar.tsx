@@ -333,17 +333,43 @@ export function InputBar({ onSendMessage, onUrlAnalyzed, isLoading, onImageGener
                     {attached.name}
                   </p>
                 </div>
+              ) : attached.type.startsWith('video/') ? (
+                // Video preview
+                <div className="relative group">
+                  <div className="h-20 w-20 bg-gray-800 rounded-lg border border-blue-200 flex items-center justify-center">
+                    <span className="text-2xl">🎬</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeAttachedFile(index)}
+                    className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold transition opacity-0 group-hover:opacity-100"
+                  >
+                    ✕
+                  </button>
+                  <p className="text-xs text-gray-600 mt-1 max-w-xs truncate">
+                    {attached.name}
+                  </p>
+                </div>
               ) : (
-                // File indicator
-                <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
-                  <span className="text-lg">📄</span>
+                // File indicator for docs, code, tables, etc.
+                <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg group relative">
+                  <span className="text-lg">
+                    {attached.type.includes('spreadsheet') || attached.name.endsWith('.xlsx') || attached.name.endsWith('.csv') ? '📊' :
+                     attached.type.includes('pdf') ? '📕' :
+                     attached.type.includes('word') || attached.type.includes('document') ? '📄' :
+                     attached.type.includes('text') || attached.name.endsWith('.md') ? '📝' :
+                     attached.name.endsWith('.json') || attached.name.endsWith('.xml') || attached.name.endsWith('.yaml') ? '⚙️' :
+                     attached.name.endsWith('.py') || attached.name.endsWith('.js') || attached.name.endsWith('.ts') ? '💻' :
+                     attached.name.endsWith('.html') || attached.name.endsWith('.css') ? '🌐' :
+                     '📎'}
+                  </span>
                   <span className="text-sm text-gray-700 truncate max-w-xs">
                     {attached.name}
                   </span>
                   <button
                     type="button"
                     onClick={() => removeAttachedFile(index)}
-                    className="ml-2 text-gray-400 hover:text-red-500 transition"
+                    className="ml-2 text-gray-400 hover:text-red-500 transition opacity-0 group-hover:opacity-100"
                   >
                     ✕
                   </button>
@@ -437,7 +463,7 @@ export function InputBar({ onSendMessage, onUrlAnalyzed, isLoading, onImageGener
           className="hidden"
           disabled={isLoading || generatingImage}
           multiple
-          accept="image/*,.pdf,.doc,.docx,.txt,.xlsx"
+          accept="image/*,video/*,.pdf,.doc,.docx,.txt,.xlsx,.csv,.json,.py,.js,.ts,.tsx,.jsx,.cpp,.c,.html,.css,.sql,.md,.xml,.yaml,.yml,.mp4,.webm,.mov,.avi"
         />
 
         {/* Text Input */}
