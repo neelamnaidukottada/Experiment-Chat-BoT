@@ -228,8 +228,14 @@ export function useAuthenticatedChat() {
   }, []);
 
   const addImageMessage = useCallback((imageUrl: string, prompt: string) => {
+    const userMessage: Message = {
+      id: `user-img-${Date.now()}`,
+      content: prompt,
+      sender: 'user',
+      timestamp: new Date(),
+    };
     const imageMessage: Message = {
-      id: `img-${Date.now()}`,
+      id: `img-${Date.now() + 1}`,
       content: prompt,
       sender: 'assistant',
       timestamp: new Date(),
@@ -237,7 +243,7 @@ export function useAuthenticatedChat() {
       imagePrompt: prompt,
       type: 'image',
     };
-    setMessages((prev) => [...prev, imageMessage]);
+    setMessages((prev) => [...prev, userMessage, imageMessage]);
   }, []);
 
   const editMessage = useCallback(

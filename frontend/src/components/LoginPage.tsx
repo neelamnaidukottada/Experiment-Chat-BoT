@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { GoogleLogin, CredentialResponse } from '@react-oauth/google';
 import { apiClient } from '../lib/api';
 
+const isGoogleLoginConfigured = Boolean((import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim());
+
 export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -79,13 +81,15 @@ export function LoginPage() {
         )}
 
         {/* Google Login */}
-        <div className="mb-6 flex justify-center">
-          <GoogleLogin
-            onSuccess={handleGoogleSuccess}
-            onError={handleGoogleError}
-            text={isRegister ? 'signup_with' : 'signin_with'}
-          />
-        </div>
+        {isGoogleLoginConfigured && (
+          <div className="mb-6 flex justify-center">
+            <GoogleLogin
+              onSuccess={handleGoogleSuccess}
+              onError={handleGoogleError}
+              text={isRegister ? 'signup_with' : 'signin_with'}
+            />
+          </div>
+        )}
 
         {/* Divider */}
         <div className="relative mb-6">
@@ -93,7 +97,9 @@ export function LoginPage() {
             <div className="w-full border-t border-gray-300"></div>
           </div>
           <div className="relative flex justify-center text-sm">
-            <span className="px-2 bg-white text-gray-500">Or continue with email</span>
+            <span className="px-2 bg-white text-gray-500">
+              {isGoogleLoginConfigured ? 'Or continue with email' : 'Continue with email'}
+            </span>
           </div>
         </div>
 

@@ -1,115 +1,77 @@
-"""Image generation service using Google Gemini image generation model."""
+"""Image generation service using Gemini Imagen via LiteLLM proxy."""
 
-import asyncio
-import base64
 import logging
-from typing import Any
-
+import httpx
 from app.core.settings import settings
-
-try:
-    from google import genai
-    from google.genai import types
-except ImportError:  # pragma: no cover - handled at runtime if dependency missing
-    genai = None  # type: ignore[assignment]
-    types = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
 
 class ImageService:
-    """Service for generating images using Google Gemini 2.0 image model."""
+    """Service for generating images using Gemini Imagen via the Amzur LiteLLM proxy."""
 
     def __init__(self):
-        """Initialize Google GenAI client."""
-        if not settings.GOOGLE_GEMINI_API_KEY:
-            logger.error("❌ GOOGLE_GEMINI_API_KEY not set in environment variables!")
-            raise ValueError("GOOGLE_GEMINI_API_KEY environment variable is required")
-
-        if genai is None or types is None:
-            raise RuntimeError(
-                "google-genai package is not installed. Install it with `pip install google-genai`."
-            )
-
-        self.model_name = settings.GEMINI_IMAGE_MODEL
-        logger.info(f"[ImageService] Initializing with model: {self.model_name}")
-        self.client = genai.Client(api_key=settings.GOOGLE_GEMINI_API_KEY)
-        logger.info(f"[ImageService] ✅ Initialized successfully")
+        logger.info(f"[ImageService] Initializing with model: {settings.IMAGE_GEN_MODEL}")
 
     async def generate_image(self, prompt: str, size: str = "1024x1024") -> dict:
         """
-        Generate an image using Gemini image generation.
-        
+        Generate an image using Gemini Imagen via the LiteLLM proxy.
+
         Args:
             prompt: Image description/prompt.
-            size: Preferred image size (currently advisory only).
-            
+            size: Image size (e.g. "1024x1024").
+
         Returns:
-            Dictionary with data URL and revised prompt.
+            Dictionary with url (data URI or remote URL), revised_prompt, model, source.
         """
         try:
-            if not prompt or not prompt.strip():
-                raise ValueError("Prompt cannot be empty")
+            logger.info(f"[ImageService] 🎨 Generating image — model: {settings.IMAGE_GEN_MODEL}, prompt: {prompt[:80]}...")
 
-            logger.info(f"[ImageService] 🎨 Generating image with prompt: {prompt[:60]}...")
-            logger.info(f"[ImageService] Using model: {self.model_name}")
-
-            def _generate() -> Any:
-                logger.info("[ImageService] 🔄 Calling Gemini image generation API...")
-                return self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_modalities=["TEXT", "IMAGE"],
-                    ),
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(
+                    f"{settings.LITELLM_PROXY_URL}/v1/images/generations",
+                    headers={
+                        "Authorization": f"Bearer {settings.LITELLM_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": settings.IMAGE_GEN_MODEL,
+                        "prompt": prompt,
+                        "n": 1,
+                        "size": size,
+                        "response_format": "b64_json",
+                    },
                 )
 
-            response = await asyncio.to_thread(_generate)
-            logger.info(f"[ImageService] ✅ Response generated successfully")
+            if response.status_code != 200:
+                error_body = response.text
+                logger.error(f"[ImageService] ❌ Proxy returned {response.status_code}: {error_body}")
+                raise Exception(f"LiteLLM proxy error {response.status_code}: {error_body}")
 
-            image_data_url, revised_prompt = self._extract_image_and_text(response, prompt)
+            data = response.json()
+            logger.info(f"[ImageService] ✅ Proxy responded OK")
+
+            image_data = data["data"][0]
+
+            if image_data.get("b64_json"):
+                image_url = f"data:image/png;base64,{image_data['b64_json']}"
+            elif image_data.get("url"):
+                image_url = image_data["url"]
+            else:
+                raise ValueError(f"No image data in proxy response: {data}")
+
             return {
-                "url": image_data_url,
-                "revised_prompt": revised_prompt,
-                "model": self.model_name,
-                "source": "google-gemini",
-                "requested_size": size,
+                "url": image_url,
+                "revised_prompt": image_data.get("revised_prompt", prompt),
+                "model": settings.IMAGE_GEN_MODEL,
+                "source": "litellm-proxy",
             }
+
         except Exception as e:
-            logger.error(f"[ImageService] ❌ Error during image generation: {str(e)}")
+            logger.error(f"[ImageService] ❌ Error: {str(e)}")
             raise Exception(f"Image generation failed: {str(e)}")
-
-    def _extract_image_and_text(self, response: Any, fallback_prompt: str) -> tuple[str, str]:
-        """Extract generated image bytes and revised prompt text from Gemini response."""
-        revised_prompt_parts: list[str] = []
-        encoded_image: str | None = None
-        mime_type = "image/png"
-
-        candidates = getattr(response, "candidates", None) or []
-        for candidate in candidates:
-            content = getattr(candidate, "content", None)
-            parts = getattr(content, "parts", None) or []
-            for part in parts:
-                text = getattr(part, "text", None)
-                if text:
-                    revised_prompt_parts.append(text.strip())
-
-                inline_data = getattr(part, "inline_data", None)
-                if inline_data and getattr(inline_data, "data", None):
-                    raw_data = inline_data.data
-                    mime_type = getattr(inline_data, "mime_type", None) or mime_type
-                    if isinstance(raw_data, bytes):
-                        encoded_image = base64.b64encode(raw_data).decode("utf-8")
-                    elif isinstance(raw_data, str):
-                        encoded_image = raw_data
-
-        if not encoded_image:
-            raise ValueError("Gemini response did not include image data")
-
-        revised_prompt = " ".join(part for part in revised_prompt_parts if part).strip() or fallback_prompt
-        return f"data:{mime_type};base64,{encoded_image}", revised_prompt
 
 
 def get_image_service() -> ImageService:
-    """Get ImageService singleton."""
+    """Get ImageService instance."""
     return ImageService()

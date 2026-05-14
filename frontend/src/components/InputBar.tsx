@@ -33,6 +33,9 @@ export function InputBar({ onSendMessage, onUrlAnalyzed, isLoading, onImageGener
   // URL detection regex
   const urlRegex = /(https?:\/\/[^\s]+)/g;
 
+  // Image generation intent detection
+  const imageGenRegex = /^(generate|create|draw|make|render|paint|design|produce)\s+(an?\s+)?(image|picture|photo|illustration|artwork|drawing|painting|art|visual|graphic)\b/i;
+
   // Detect URLs in input
   const detectUrlsInInput = (text: string) => {
     const urls = text.match(urlRegex);
@@ -131,6 +134,9 @@ export function InputBar({ onSendMessage, onUrlAnalyzed, isLoading, onImageGener
       if (detectedUrl && input.trim().includes(detectedUrl)) {
         console.log('[InputBar] URL detected in message - using analyze endpoint');
         handleAnalyzeUrl(detectedUrl);
+      } else if (imageGenRegex.test(input.trim())) {
+        console.log('[InputBar] Image generation intent detected - generating image');
+        handleGenerateImage(input.trim());
       } else {
         onSendMessage(input, attachedFiles.length > 0 ? attachedFiles : undefined);
         setInput('');
@@ -475,7 +481,7 @@ export function InputBar({ onSendMessage, onUrlAnalyzed, isLoading, onImageGener
             detectUrlsInInput(e.target.value);
           }}
           onPaste={handlePaste}
-          placeholder={attachedFiles.length > 0 ? "Add a prompt for your files..." : "Ask anything or paste a URL..."}
+          placeholder={generatingImage ? "Generating image..." : attachedFiles.length > 0 ? "Add a prompt for your files..." : "Ask anything, paste a URL, or say 'create image of...'..."}
           disabled={isLoading || generatingImage || analyzingUrl}
           className="flex-1 bg-transparent px-4 py-3 focus:outline-none disabled:opacity-50 text-gray-800 placeholder-gray-500"
         />

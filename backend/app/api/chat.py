@@ -211,6 +211,38 @@ async def send_message(
         )
 
 
+class ImageGenerateRequest(BaseModel):
+    prompt: str
+    size: str = "1024x1024"
+
+
+@router.post("/generate-image")
+async def generate_image(
+    request: ImageGenerateRequest,
+    user_email: str = Depends(get_current_user_email),
+):
+    """
+    Generate an image from a text prompt using Gemini Imagen via LiteLLM proxy.
+
+    Returns:
+        JSON with url, revised_prompt, model, source.
+    """
+    try:
+        logger.info(f"[Chat] 🎨 Image generation request from {user_email}: {request.prompt[:80]}")
+        image_service = get_image_service()
+        result = await image_service.generate_image(request.prompt, request.size)
+        logger.info(f"[Chat] ✅ Image generated successfully")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Chat] ❌ Image generation failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"error": "image_generation_error", "message": str(e)},
+        )
+
+
 @router.post("/conversations", response_model=ConversationResponse)
 async def create_conversation(
     data: ConversationCreate,
