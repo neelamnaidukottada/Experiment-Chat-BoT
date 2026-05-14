@@ -127,6 +127,7 @@ export function MessageList({ messages, isLoading, onEditMessage, onRegenerateMe
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedSqlId, setCopiedSqlId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -165,9 +166,23 @@ export function MessageList({ messages, isLoading, onEditMessage, onRegenerateMe
     }
   };
 
+  const handleCopySql = (messageId: string, sql: string) => {
+    navigator.clipboard.writeText(sql);
+    setCopiedSqlId(messageId);
+    setTimeout(() => setCopiedSqlId(null), 2000);
+  };
+
   return (
     <div className="flex flex-col space-y-4 p-4 max-w-4xl mx-auto w-full h-full overflow-y-auto">
-      {messages.map((message, index) => (
+      {messages.map((message, index) => {
+        const assistantDisplayContent = message.dbGeneratedSql
+          ? message.content
+              .replace(/(^|\n)\s*SQL Used:.*$/gim, '')
+              .replace(/\n{3,}/g, '\n\n')
+              .trim()
+          : message.content;
+
+        return (
         <div
           key={message.id}
           className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'} group`}
@@ -222,6 +237,34 @@ export function MessageList({ messages, isLoading, onEditMessage, onRegenerateMe
                   </div>
                 ) : message.sender === 'assistant' ? (
                   <div className="prose prose-sm max-w-none">
+                    {message.dbGeneratedSql && (
+                      <details className="mb-3 rounded-lg border border-blue-300 bg-blue-50/70 p-2">
+                        <summary className="cursor-pointer select-none text-xs font-semibold text-blue-800">
+                          SQL Query
+                        </summary>
+                        <div className="mt-2 mb-2 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handleCopySql(message.id, message.dbGeneratedSql || '')}
+                            className="rounded-md border border-blue-300 bg-white px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 transition"
+                          >
+                            {copiedSqlId === message.id ? 'Copied SQL' : 'Copy SQL'}
+                          </button>
+                        </div>
+                        <div className="mt-2 rounded-lg overflow-hidden">
+                          <SyntaxHighlighter
+                            style={vscDarkPlus}
+                            language="sql"
+                            showLineNumbers={true}
+                            wrapLongLines={true}
+                            className="!m-0 !p-3 text-sm"
+                          >
+                            {message.dbGeneratedSql}
+                          </SyntaxHighlighter>
+                        </div>
+                      </details>
+                    )}
+
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm, remarkMath]}
                       rehypePlugins={[rehypeKatex, rehypeRaw]}
@@ -237,7 +280,7 @@ export function MessageList({ messages, isLoading, onEditMessage, onRegenerateMe
                         code: ({ node, inline, className, children, ...props }: any) => {
                           const match = /language-(\w+)/.exec(className || '');
                           const language = match ? match[1] : 'text';
-                          
+
                           if (inline) {
                             return (
                               <code className="bg-gray-200 px-1 py-0.5 rounded text-sm font-mono" {...props}>
@@ -245,7 +288,7 @@ export function MessageList({ messages, isLoading, onEditMessage, onRegenerateMe
                               </code>
                             );
                           }
-                          
+
                           return (
                             <div className="mb-2 rounded-lg overflow-hidden">
                               <SyntaxHighlighter
@@ -302,8 +345,8 @@ export function MessageList({ messages, isLoading, onEditMessage, onRegenerateMe
                           // Handle images in markdown
                           if (src) {
                             return (
-                              <ImageDisplay 
-                                src={src} 
+                              <ImageDisplay
+                                src={src}
                                 alt={alt || 'Image'}
                               />
                             );
@@ -312,11 +355,19 @@ export function MessageList({ messages, isLoading, onEditMessage, onRegenerateMe
                         },
                       }}
                     >
-                      {message.content}
+                      {assistantDisplayContent}
                     </ReactMarkdown>
                   </div>
                 ) : (
                   <p className="text-justify break-words">{message.content}</p>
+                )}
+
+                {message.sender === 'assistant' && message.dbGeneratedSql && (
+                  <div className="mt-2">
+                    <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-1 text-[11px] font-semibold text-blue-800">
+                      DB Response
+                    </span>
+                  </div>
                 )}
                 <span className={`text-xs mt-2 block opacity-60 ${
                   message.sender === 'user' ? 'text-gray-300' : 'text-gray-600'
@@ -401,7 +452,7 @@ export function MessageList({ messages, isLoading, onEditMessage, onRegenerateMe
             </div>
           </div>
         </div>
-      ))}
+      )})}
       
       {isLoading && (
         <div className="flex justify-start">

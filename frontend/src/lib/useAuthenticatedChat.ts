@@ -396,6 +396,41 @@ export function useAuthenticatedChat() {
     [loadConversations]
   );
 
+  const addDatabaseResponse = useCallback(
+    (userMessage: string, assistantResponse: string, generatedSql?: string) => {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const timestamp = new Date();
+
+        const userMsg: Message = {
+          id: `${Date.now()}-db-user`,
+          content: userMessage,
+          sender: 'user',
+          timestamp,
+        };
+
+        const assistantMsg: Message = {
+          id: `${Date.now()}-db-assistant`,
+          content: assistantResponse,
+          sender: 'assistant',
+          timestamp,
+          dbGeneratedSql: generatedSql,
+        };
+
+        setMessages((prev) => [...prev, userMsg, assistantMsg]);
+        loadConversations();
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Failed to add database response';
+        setError(errorMsg);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [loadConversations]
+  );
+
   return {
     messages,
     conversations,
@@ -407,6 +442,7 @@ export function useAuthenticatedChat() {
     editMessage,
     regenerateMessage,
     addAnalyzedResponse,
+    addDatabaseResponse,
     loadConversations,
     loadConversation,
     createNewConversation,

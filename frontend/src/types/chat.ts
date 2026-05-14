@@ -7,6 +7,10 @@ export interface ChatMessage {
   assistant_response: string;
 }
 
+export interface DatabaseQuestionResponse extends ChatMessage {
+  generated_sql: string;
+}
+
 export interface Message {
   id: string;
   content: string;
@@ -15,6 +19,7 @@ export interface Message {
   imageUrl?: string;
   imagePrompt?: string;
   type?: 'text' | 'image';
+  dbGeneratedSql?: string;
 }
 
 export interface ConversationMessage {

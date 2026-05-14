@@ -10,12 +10,22 @@ interface AttachedFile {
 interface InputBarProps {
   onSendMessage: (message: string, files?: AttachedFile[]) => void;
   onUrlAnalyzed?: (userMessage: string, assistantResponse: string) => void;
+  onDatabaseAnswered?: (userMessage: string, assistantResponse: string, generatedSql?: string) => void;
   isLoading: boolean;
   onImageGenerated?: (imageUrl: string, prompt: string) => void;
   currentConversationId?: number;
 }
 
-export function InputBar({ onSendMessage, onUrlAnalyzed, isLoading, onImageGenerated, currentConversationId }: InputBarProps) {
+type ChatMode = 'general' | 'database' | 'image';
+
+export function InputBar({
+  onSendMessage,
+  onUrlAnalyzed,
+  onDatabaseAnswered,
+  isLoading,
+  onImageGenerated,
+  currentConversationId,
+}: InputBarProps) {
   const [input, setInput] = useState('');
   const [generatingImage, setGeneratingImage] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -24,6 +34,7 @@ export function InputBar({ onSendMessage, onUrlAnalyzed, isLoading, onImageGener
   const [recordingTime, setRecordingTime] = useState(0);
   const [detectedUrl, setDetectedUrl] = useState<string | null>(null);
   const [analyzingUrl, setAnalyzingUrl] = useState(false);
+  const [chatMode, setChatMode] = useState<ChatMode>('general');
   const menuRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -35,6 +46,7 @@ export function InputBar({ onSendMessage, onUrlAnalyzed, isLoading, onImageGener
 
   // Image generation intent detection
   const imageGenRegex = /^(generate|create|draw|make|render|paint|design|produce)\s+(an?\s+)?(image|picture|photo|illustration|artwork|drawing|painting|art|visual|graphic)\b/i;
+  const dbQuestionRegex = /^\/db\s+(.+?)\s*\|\s*(.+)$/is;
 
   // Detect URLs in input
   const detectUrlsInInput = (text: string) => {
@@ -130,6 +142,35 @@ export function InputBar({ onSendMessage, onUrlAnalyzed, isLoading, onImageGener
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if ((input.trim() || attachedFiles.length > 0) && !isLoading && !generatingImage && !analyzingUrl) {
+      const dbMatch = input.trim().match(dbQuestionRegex);
+
+      if (dbMatch) {
+        const databaseUrl = dbMatch[1].trim();
+        const question = dbMatch[2].trim();
+        handleDatabaseQuestion(question, databaseUrl);
+        return;
+      }
+
+      if (chatMode === 'database') {
+        if (attachedFiles.length > 0) {
+          alert('Database mode does not support file attachments. Switch to General Chat for files.');
+          return;
+        }
+
+        handleDatabaseQuestion(input.trim());
+        return;
+      }
+
+      if (chatMode === 'image') {
+        if (attachedFiles.length > 0) {
+          alert('Image mode does not support file attachments. Switch to General Chat for files.');
+          return;
+        }
+
+        handleGenerateImage(input.trim());
+        return;
+      }
+
       // Check if message contains a URL - if so, analyze it instead of regular send
       if (detectedUrl && input.trim().includes(detectedUrl)) {
         console.log('[InputBar] URL detected in message - using analyze endpoint');
@@ -143,6 +184,32 @@ export function InputBar({ onSendMessage, onUrlAnalyzed, isLoading, onImageGener
         setAttachedFiles([]);
         setDetectedUrl(null);
       }
+    }
+  };
+
+  const handleDatabaseQuestion = async (question: string, databaseUrl?: string) => {
+    if (!question) return;
+
+    setAnalyzingUrl(true);
+    try {
+      const response = await apiClient.askDatabaseQuestion(
+        question,
+        databaseUrl,
+        currentConversationId
+      );
+
+      if (onDatabaseAnswered) {
+        onDatabaseAnswered(question, response.assistant_response, response.generated_sql);
+      }
+
+      setInput('');
+      setDetectedUrl(null);
+      setAttachedFiles([]);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to query database';
+      alert(`Database query failed: ${errorMessage}`);
+    } finally {
+      setAnalyzingUrl(false);
     }
   };
 
@@ -315,6 +382,54 @@ export function InputBar({ onSendMessage, onUrlAnalyzed, isLoading, onImageGener
 
   return (
     <div className="space-y-3">
+      {/* Explicit mode selector to keep routing deterministic. */}
+      <div className="flex items-center gap-2 px-2">
+        <button
+          type="button"
+          onClick={() => {
+            setChatMode('general');
+            setShowMenu(false);
+          }}
+          className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${
+            chatMode === 'general'
+              ? 'bg-gray-900 text-white'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+          }`}
+        >
+          General Chat
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setChatMode('database');
+            setShowMenu(false);
+            setAttachedFiles([]);
+          }}
+          className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${
+            chatMode === 'database'
+              ? 'bg-blue-700 text-white'
+              : 'bg-blue-100 text-blue-800 hover:bg-blue-200'
+          }`}
+        >
+          Database Chat
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setChatMode('image');
+            setShowMenu(false);
+            setAttachedFiles([]);
+          }}
+          className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${
+            chatMode === 'image'
+              ? 'bg-emerald-700 text-white'
+              : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+          }`}
+        >
+          Image Generation
+        </button>
+      </div>
+
       {/* Attached Files Display */}
       {attachedFiles.length > 0 && (
         <div className="flex flex-wrap gap-2 px-2">
@@ -393,7 +508,7 @@ export function InputBar({ onSendMessage, onUrlAnalyzed, isLoading, onImageGener
           <button
             type="button"
             onClick={() => setShowMenu(!showMenu)}
-            disabled={isLoading || generatingImage}
+            disabled={isLoading || generatingImage || chatMode === 'database'}
             className="p-2.5 hover:bg-gray-300 rounded-full transition disabled:opacity-50 disabled:cursor-not-allowed text-gray-600 flex items-center justify-center"
             title="More options"
           >
@@ -467,7 +582,7 @@ export function InputBar({ onSendMessage, onUrlAnalyzed, isLoading, onImageGener
           type="file"
           onChange={handleFileUpload}
           className="hidden"
-          disabled={isLoading || generatingImage}
+          disabled={isLoading || generatingImage || chatMode === 'database' || chatMode === 'image'}
           multiple
           accept="image/*,video/*,.pdf,.doc,.docx,.txt,.xlsx,.csv,.json,.py,.js,.ts,.tsx,.jsx,.cpp,.c,.html,.css,.sql,.md,.xml,.yaml,.yml,.mp4,.webm,.mov,.avi"
         />
@@ -481,7 +596,17 @@ export function InputBar({ onSendMessage, onUrlAnalyzed, isLoading, onImageGener
             detectUrlsInInput(e.target.value);
           }}
           onPaste={handlePaste}
-          placeholder={generatingImage ? "Generating image..." : attachedFiles.length > 0 ? "Add a prompt for your files..." : "Ask anything, paste a URL, or say 'create image of...'..."}
+          placeholder={
+            generatingImage
+              ? 'Generating image...'
+              : attachedFiles.length > 0
+                ? 'Add a prompt for your files...'
+                : chatMode === 'database'
+                  ? 'Ask a SQL-style question in natural language (uses configured DATABASE_URL)'
+                  : chatMode === 'image'
+                    ? 'Describe the image you want to generate'
+                  : "Ask anything, paste a URL, or use /db <database-url> | <question>"
+          }
           disabled={isLoading || generatingImage || analyzingUrl}
           className="flex-1 bg-transparent px-4 py-3 focus:outline-none disabled:opacity-50 text-gray-800 placeholder-gray-500"
         />
@@ -489,7 +614,7 @@ export function InputBar({ onSendMessage, onUrlAnalyzed, isLoading, onImageGener
         {/* Action Buttons */}
         <div className="flex items-center gap-1 pr-2">
           {/* Analyze URL Button - Show when URL is detected */}
-          {detectedUrl && (
+          {detectedUrl && chatMode === 'general' && (
             <button
               type="button"
               onClick={() => handleAnalyzeUrl(detectedUrl)}
@@ -506,7 +631,7 @@ export function InputBar({ onSendMessage, onUrlAnalyzed, isLoading, onImageGener
           <button
             type="button"
             onClick={handleVoiceInput}
-            disabled={isLoading || generatingImage || analyzingUrl}
+            disabled={isLoading || generatingImage || analyzingUrl || chatMode === 'database' || chatMode === 'image'}
             className={`px-3 py-2.5 rounded-full transition flex items-center justify-center gap-2 text-sm font-medium ${
               isRecording
                 ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse'

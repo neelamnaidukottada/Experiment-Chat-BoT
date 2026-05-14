@@ -9,7 +9,13 @@ import json
 
 from app.core.database import get_db
 from app.core.auth import get_current_user_email
-from app.schemas.chat import ChatMessageRequest, ChatMessageResponse
+from app.core.settings import settings
+from app.schemas.chat import (
+    ChatMessageRequest,
+    ChatMessageResponse,
+    DatabaseQuestionRequest,
+    DatabaseQuestionResponse,
+)
 from app.schemas.conversation import (
     ConversationCreate,
     ConversationResponse,
@@ -22,6 +28,7 @@ from app.services.image_service import get_image_service
 from app.services.file_service import FileService
 from app.services.rag_service import get_rag_service
 from app.services.url_service import URLService
+from app.services.sql_qa_service import get_sql_qa_service
 
 logger = logging.getLogger(__name__)
 
@@ -548,6 +555,77 @@ class URLAnalysisResponse(BaseModel):
     """Response with analyzed URL content."""
     user_message: str
     assistant_response: str
+
+
+# ============ Database Q&A Endpoint ============
+
+@router.post("/database-question", response_model=DatabaseQuestionResponse)
+async def ask_database_question(
+    request: DatabaseQuestionRequest,
+    user_email: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+) -> DatabaseQuestionResponse:
+    """Answer natural-language questions by generating and executing safe SQL."""
+    logger.info("[DBQA] ========== NEW DATABASE QUESTION REQUEST ==========")
+    logger.info("[DBQA] Question: %s", request.question)
+
+    try:
+        user = AuthService.get_user_by_email(db, user_email)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+            )
+
+        conversation_id = request.conversation_id
+        if not conversation_id:
+            conversation = ConversationService.create_conversation(db, user.id, "Database Q&A")
+            conversation_id = conversation.id
+
+        sql_qa_service = get_sql_qa_service()
+        database_url = (request.database_url or settings.DATABASE_URL or "").strip()
+        if not database_url:
+            raise ValueError("DATABASE_URL is not configured")
+
+        result = sql_qa_service.answer_question(
+            database_url=database_url,
+            question=request.question,
+        )
+
+        if conversation_id:
+            ConversationService.add_message(
+                db,
+                conversation_id,
+                user.id,
+                "user",
+                f"[DB QUESTION]\n{request.question}",
+            )
+            ConversationService.add_message(
+                db,
+                conversation_id,
+                user.id,
+                "assistant",
+                result.answer,
+            )
+
+        return DatabaseQuestionResponse(
+            user_message=request.question,
+            assistant_response=result.answer,
+            generated_sql=result.sql,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "database_query_validation_error", "message": str(exc)},
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("[DBQA] Error processing database question: %s", str(exc), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"error": "database_query_error", "message": str(exc)},
+        )
 
 
 # ============ URL Analysis Endpoint ============

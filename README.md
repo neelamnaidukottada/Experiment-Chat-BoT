@@ -16,6 +16,7 @@ A conversational AI chatbot built with authentication, chat history persistence,
 - ✅ **Persistent Messages** - All messages are saved in PostgreSQL
 - ✅ **Protected Routes** - Frontend routes require authentication
 - ✅ **Modern UI** - Responsive design with sidebar navigation
+- ✅ **Natural Language SQL (Project 8)** - Connect a SQL DB and ask questions using `/db <database-url> | <question>`
 
 ## Prerequisites
 

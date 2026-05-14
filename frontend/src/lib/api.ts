@@ -1,5 +1,10 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
-import type { ChatMessage, Conversation, ConversationSummary } from '../types/chat';
+import type {
+  ChatMessage,
+  Conversation,
+  ConversationSummary,
+  DatabaseQuestionResponse,
+} from '../types/chat';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -307,6 +312,32 @@ class ApiClient {
     } catch (error) {
       if (error instanceof AxiosError) {
         const errorMsg = error.response?.data?.detail || 'Failed to analyze URL';
+        throw new Error(errorMsg);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Ask a natural-language question against a SQL database.
+   */
+  async askDatabaseQuestion(
+    question: string,
+    databaseUrl?: string,
+    conversationId?: number
+  ): Promise<DatabaseQuestionResponse> {
+    try {
+      const response = await this.client.post<DatabaseQuestionResponse>('/api/chat/database-question', {
+        database_url: databaseUrl,
+        question,
+        conversation_id: conversationId,
+      });
+      return response.data;
+    } catch (error) {
+      if (error instanceof AxiosError) {
+        const errorMsg = error.response?.data?.detail?.message
+          || error.response?.data?.detail
+          || 'Failed to run database question';
         throw new Error(errorMsg);
       }
       throw error;

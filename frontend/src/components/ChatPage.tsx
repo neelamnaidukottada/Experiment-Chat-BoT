@@ -36,6 +36,7 @@ export function ChatPage() {
     editMessage,
     regenerateMessage,
     addAnalyzedResponse,
+    addDatabaseResponse,
     loadConversation,
     createNewConversation,
     deleteConversation,
@@ -216,6 +217,14 @@ export function ChatPage() {
   const handleUrlAnalyzed = (userMessage: string, assistantResponse: string) => {
     console.log('[ChatPage] Adding URL analysis response to chat');
     addAnalyzedResponse(userMessage, assistantResponse);
+  };
+
+  const handleDatabaseAnswered = (
+    userMessage: string,
+    assistantResponse: string,
+    generatedSql?: string
+  ) => {
+    addDatabaseResponse(userMessage, assistantResponse, generatedSql);
   };
 
   // Context Menu Handlers for Conversations
@@ -838,6 +847,7 @@ export function ChatPage() {
             <InputBar 
               onSendMessage={handleSendMessageWithFiles}
               onUrlAnalyzed={handleUrlAnalyzed}
+              onDatabaseAnswered={handleDatabaseAnswered}
               isLoading={isLoading}
               onImageGenerated={handleImageGenerated}
               currentConversationId={currentConversation?.id}
