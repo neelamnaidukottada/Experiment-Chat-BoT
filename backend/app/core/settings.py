@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     LITELLM_PROXY_URL: str = "https://litellm.amzur.com"
     LITELLM_API_KEY: str = "sk-"  # Set via environment variable
     LLM_MODEL: str = "gpt-4o"
+    LITELLM_EMBEDDING_MODEL: str = "text-embedding-3-large"
     IMAGE_GEN_MODEL: str = "gemini/imagen-4.0-fast-generate-001"  # Image generation model via LiteLLM proxy
     
     # Google Gemini
@@ -23,6 +24,7 @@ class Settings(BaseSettings):
     
     # Database - Supabase PostgreSQL
     DATABASE_URL: str = "postgresql://user:password@localhost:5432/chatbot_db"
+    CHROMA_PERSIST_DIR: str = "./chroma_db"
     
     # JWT/Authentication
     SECRET_KEY: str = "your-secret-key-change-in-production"

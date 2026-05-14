@@ -191,11 +191,23 @@ export function ChatPage() {
         return;
       }
     }
+
+    // If no conversation is active (fresh page or cleared state), create one automatically.
+    if (!conversationIdToUse) {
+      console.log('[ChatPage] No active conversation, creating one before send');
+      const newConversation = await createNewConversation();
+      if (newConversation?.id) {
+        conversationIdToUse = newConversation.id;
+      } else {
+        console.error('[ChatPage] Failed to auto-create conversation');
+        return;
+      }
+    }
     
     // Send the message with the conversation ID
     // Pass the conversation ID directly to avoid timing issues with state updates
     if (conversationIdToUse) {
-      sendMessage(message, files, conversationIdToUse);
+      await sendMessage(message, files, conversationIdToUse);
     } else {
       console.error('[ChatPage] No conversation available to send message');
     }

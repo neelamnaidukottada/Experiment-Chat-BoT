@@ -20,6 +20,7 @@ from app.services.conversation_service import ConversationService
 from app.services.auth_service import AuthService
 from app.services.image_service import get_image_service
 from app.services.file_service import FileService
+from app.services.rag_service import get_rag_service
 from app.services.url_service import URLService
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,11 @@ async def send_message(
             )
         
         logger.info(f"[Chat] CHECKING FILES: received {len(files)} files")
+
+        # Create conversation early so uploaded files can be indexed per conversation
+        if not conversation_id:
+            conversation = ConversationService.create_conversation(db, user.id)
+            conversation_id = conversation.id
         
         # Process message with files if any
         message_content = user_message
@@ -117,14 +123,35 @@ async def send_message(
                     file_content = await file.read()
                     logger.info(f"[Chat] ✅ READ FILE: {file.filename} - {len(file_content)} bytes")
                     
-                    # Extract text from file
-                    logger.info(f"[Chat] 🔄 CALLING FileService.extract_text_from_file() for {file.filename}")
-                    extracted_text = FileService.extract_text_from_file(
-                        file_content,
-                        file.filename,
-                        file.content_type or "application/octet-stream"
-                    )
-                    logger.info(f"[Chat] EXTRACTED: {len(str(extracted_text)) if extracted_text else 0} chars from {file.filename}")
+                    content_type_value = file.content_type or "application/octet-stream"
+                    extension = file.filename.lower().split('.')[-1] if '.' in file.filename else ''
+
+                    # Use RAG path for PDFs: index in ChromaDB and provide an indexing note in prompt.
+                    if extension == "pdf" or "pdf" in content_type_value.lower():
+                        rag_service = get_rag_service()
+                        chunk_count = rag_service.ingest_pdf(
+                            file_content=file_content,
+                            filename=file.filename,
+                            user_id=user.id,
+                            conversation_id=conversation_id,
+                        )
+                        extracted_text = (
+                            f"[PDF indexed for retrieval with ChromaDB. "
+                            f"Indexed chunks: {chunk_count}. "
+                            "Ask questions and I will use RAG context from this file.]"
+                        )
+                        logger.info(
+                            f"[Chat] ✅ PDF indexed in RAG store: {file.filename}, chunks={chunk_count}"
+                        )
+                    else:
+                        # Extract text from non-PDF files directly into the prompt.
+                        logger.info(f"[Chat] 🔄 CALLING FileService.extract_text_from_file() for {file.filename}")
+                        extracted_text = FileService.extract_text_from_file(
+                            file_content,
+                            file.filename,
+                            content_type_value,
+                        )
+                        logger.info(f"[Chat] EXTRACTED: {len(str(extracted_text)) if extracted_text else 0} chars from {file.filename}")
                     
                     # ALWAYS append file content to message (with or without extraction)
                     if extracted_text and len(str(extracted_text).strip()) > 0:
@@ -172,11 +199,6 @@ async def send_message(
         else:
             logger.warning(f"[Chat] ⚠️ Warning: No content markers in message!")
         
-        # Create conversation if not provided
-        if not conversation_id:
-            conversation = ConversationService.create_conversation(db, user.id)
-            conversation_id = conversation.id
-        
         # Fetch previous conversations for context (last 5 conversations excluding current one)
         logger.info(f"[Chat] 📚 Fetching previous conversations for context")
         previous_conversations = ConversationService.get_previous_conversations(
@@ -191,6 +213,7 @@ async def send_message(
         chat_service = get_chat_service(db=db)
         assistant_response = chat_service.generate_response(
             user_message=message_content,
+            retrieval_query=user_message,
             user_email=user_email,
             conversation_id=conversation_id,
             user_id=user.id,

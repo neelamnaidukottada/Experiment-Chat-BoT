@@ -11,6 +11,7 @@ import base64
 
 from app.ai.llm import get_chat_llm, get_vision_llm
 from app.services.conversation_service import ConversationService
+from app.services.rag_service import get_rag_service
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,7 @@ class ChatService:
     def generate_response(
         self,
         user_message: str,
+        retrieval_query: Optional[str] = None,
         user_email: str = "anonymous@example.com",
         conversation_id: int = None,
         user_id: int = None,
@@ -123,7 +125,14 @@ class ChatService:
                 return self._handle_image_message(user_message, user_email, conversation_id, user_id)
             else:
                 logger.info(f"[ChatService] ℹ️ Regular text message - using Text LLM")
-                return self._handle_text_message(user_message, user_email, conversation_id, user_id, previous_conversations)
+                return self._handle_text_message(
+                    user_message,
+                    user_email,
+                    conversation_id,
+                    user_id,
+                    previous_conversations,
+                    retrieval_query,
+                )
             
         except Exception as e:
             logger.error(f"[ChatService] Error generating response: {str(e)}", exc_info=True)
@@ -215,9 +224,31 @@ class ChatService:
         conversation_id: int,
         user_id: int,
         previous_conversations: Optional[List] = None,
+        retrieval_query: Optional[str] = None,
     ) -> str:
         """Handle regular text messages using Text LLM."""
         try:
+            llm_input = user_message
+
+            # Add retrieval context from ChromaDB for this user/conversation.
+            if user_id and conversation_id:
+                query = retrieval_query or user_message
+                rag_context = get_rag_service().retrieve_context(
+                    query=query,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    k=5,
+                )
+                if rag_context:
+                    llm_input += (
+                        "\n\n===== RAG CONTEXT START =====\n"
+                        "The following context was retrieved from uploaded PDFs in ChromaDB. "
+                        "Use it to answer accurately.\n\n"
+                        f"{rag_context}\n"
+                        "===== RAG CONTEXT END ====="
+                    )
+                    logger.info("[ChatService] 🔎 Added retrieved RAG context to LLM input")
+
             # Check for file content in message
             has_file_content = "===== FILE START:" in user_message or "===== FILE ERROR:" in user_message
             
@@ -240,7 +271,7 @@ class ChatService:
             logger.info(f"[ChatService] 📋 System prompt built: {len(system_prompt)} characters")
             
             # Log the message being sent (first 500 chars)
-            message_preview = user_message[:500] + "..." if len(user_message) > 500 else user_message
+            message_preview = llm_input[:500] + "..." if len(llm_input) > 500 else llm_input
             logger.info(f"[ChatService] 📤 Sending to LLM - Message preview: {message_preview}")
             
             # Initialize chain with text LLM
@@ -254,7 +285,7 @@ class ChatService:
             # Invoke chain
             logger.info(f"[ChatService] ⚙️ Invoking LLM chain...")
             response = chain.invoke(
-                {"input": user_message},
+                {"input": llm_input},
                 config={"metadata": {"user_email": user_email}}
             )
             logger.info(f"[ChatService] ✅ LLM response received: {len(response)} characters")
